@@ -10,8 +10,8 @@ import kotlinx.serialization.Serializable
  * JSON 结构来自 MAA Core 基建排班协议:
  * https://maa.plus/docs/zh-cn/protocol/base-scheduling-schema.html
  *
- * 仅解析 UI 展示所需的字段（title/description/plans 的 name/period）,
- * rooms/operators 等执行细节由 MAA Core 直接解析
+ * UI 除展示字段外也读取制造站、贸易站和无人机配置，用于基建日产预测。
+ * 其余执行细节仍由 MAA Core 直接解析。
  */
 @Serializable
 data class CustomInfrastConfig(
@@ -34,6 +34,30 @@ data class CustomInfrastConfig(
         val description: String? = null,
         @SerialName("description_post")
         val descriptionPost: String? = null,
-        val period: List<List<String>> = emptyList()
+        val period: List<List<String>> = emptyList(),
+        val rooms: Rooms = Rooms(),
+        val drones: Drones? = null,
+    )
+
+    @Serializable
+    data class Rooms(
+        val trading: List<ProductionRoom> = emptyList(),
+        val manufacture: List<ProductionRoom> = emptyList(),
+    )
+
+    /** MAA 排班协议中的生产设施。未知字段由 JsonUtils 忽略。 */
+    @Serializable
+    data class ProductionRoom(
+        val product: String? = null,
+        val autofill: Boolean = false,
+        val skip: Boolean = false,
+    )
+
+    @Serializable
+    data class Drones(
+        val enable: Boolean = true,
+        val room: String? = null,
+        val index: Int = 0,
+        val order: String = "pre",
     )
 }

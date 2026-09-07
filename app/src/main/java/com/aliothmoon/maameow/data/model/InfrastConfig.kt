@@ -227,7 +227,16 @@ data class InfrastConfig(
      *
      * 列表为空表示 UI 尚未成功解析配置文件，此时自动切换流程会跳过。
      */
-    val customPlanNames: List<String> = emptyList()
+    val customPlanNames: List<String> = emptyList(),
+
+    /**
+     * 产量预测使用的制造站总效率。100 表示无干员技能的基础效率。
+     * 自定义排班能确定产物和房间，但复杂技能联动无法仅靠 JSON 精确还原，允许用户校准。
+     */
+    val predictionManufactureEfficiencyPercent: Int = 175,
+
+    /** 产量预测使用的贸易站总效率，含基础 100%。 */
+    val predictionTradingEfficiencyPercent: Int = 175,
 ) : TaskParamProvider {
 
     override fun toTaskParams(ctx: TaskParamContext): List<MaaTaskParams> {

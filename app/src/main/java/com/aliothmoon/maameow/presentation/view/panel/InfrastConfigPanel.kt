@@ -58,14 +58,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aliothmoon.maameow.R
 import com.aliothmoon.maameow.constant.MaaApi
 import com.aliothmoon.maameow.data.config.MaaPathConfig
 import com.aliothmoon.maameow.data.model.CustomInfrastConfig
 import com.aliothmoon.maameow.data.model.InfrastConfig
+import com.aliothmoon.maameow.data.repository.DepotRepository
 import com.aliothmoon.maameow.domain.enums.InfrastMode
 import com.aliothmoon.maameow.domain.enums.InfrastRoomType
 import com.aliothmoon.maameow.domain.enums.UiUsageConstants
+import com.aliothmoon.maameow.domain.service.InfrastMaterial
+import com.aliothmoon.maameow.domain.service.InfrastPredictionWarning
+import com.aliothmoon.maameow.domain.service.InfrastProductionPrediction
+import com.aliothmoon.maameow.domain.service.InfrastProductionPredictor
 import com.aliothmoon.maameow.presentation.LocalFloatingWindowContext
 import com.aliothmoon.maameow.presentation.components.CheckBoxWithExpandableTip
 import com.aliothmoon.maameow.presentation.components.tip.ExpandableTipContent
@@ -81,8 +87,11 @@ import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableColumn
 import java.io.File
+import java.text.NumberFormat
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * 基建换班配置面板
@@ -339,6 +348,8 @@ private fun CustomInfrastSection(
     config: InfrastConfig, onConfigChange: (InfrastConfig) -> Unit
 ) {
     val pathConfig: MaaPathConfig = koinInject()
+    val depotRepository: DepotRepository = koinInject()
+    val depotSnapshot by depotRepository.snapshot.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isInFloatingWindow = LocalFloatingWindowContext.current
@@ -525,6 +536,34 @@ private fun CustomInfrastSection(
                 onPlanSelected = {
                     onConfigChange(config.copy(customInfrastPlanSelect = it))
                 })
+
+            val prediction = remember(
+                custom,
+                config.customInfrastPlanSelect,
+                config.predictionManufactureEfficiencyPercent,
+                config.predictionTradingEfficiencyPercent,
+                depotSnapshot.items,
+            ) {
+                InfrastProductionPredictor.predict(
+                    config = custom,
+                    selectedPlanIndex = config.customInfrastPlanSelect,
+                    depot = depotSnapshot.items,
+                    manufactureEfficiencyPercent = config.predictionManufactureEfficiencyPercent,
+                    tradingEfficiencyPercent = config.predictionTradingEfficiencyPercent,
+                )
+            }
+            InfrastProductionPredictionCard(
+                prediction = prediction,
+                hasDepotSnapshot = depotSnapshot.syncTimeMillis > 0,
+                manufactureEfficiency = config.predictionManufactureEfficiencyPercent,
+                tradingEfficiency = config.predictionTradingEfficiencyPercent,
+                onManufactureEfficiencyChange = {
+                    onConfigChange(config.copy(predictionManufactureEfficiencyPercent = it))
+                },
+                onTradingEfficiencyChange = {
+                    onConfigChange(config.copy(predictionTradingEfficiencyPercent = it))
+                },
+            )
         }
 
         //  解析错误提示
@@ -537,6 +576,247 @@ private fun CustomInfrastSection(
         }
     }
 }
+
+@Composable
+private fun InfrastProductionPredictionCard(
+    prediction: InfrastProductionPrediction,
+    hasDepotSnapshot: Boolean,
+    manufactureEfficiency: Int,
+    tradingEfficiency: Int,
+    onManufactureEfficiencyChange: (Int) -> Unit,
+    onTradingEfficiencyChange: (Int) -> Unit,
+) {
+    val flow = prediction.flow
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.panel_infrast_prediction_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.panel_infrast_prediction_tip),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            PredictionEfficiencySlider(
+                label = stringResource(R.string.panel_infrast_prediction_mfg_efficiency),
+                value = manufactureEfficiency,
+                onValueChange = onManufactureEfficiencyChange,
+            )
+            PredictionEfficiencySlider(
+                label = stringResource(R.string.panel_infrast_prediction_trade_efficiency),
+                value = tradingEfficiency,
+                onValueChange = onTradingEfficiencyChange,
+            )
+
+            HorizontalDivider()
+            Text(
+                text = stringResource(R.string.panel_infrast_prediction_daily_output),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            PredictionLine(
+                stringResource(R.string.panel_infrast_prediction_lmd),
+                stringResource(
+                    R.string.panel_infrast_prediction_produced_net,
+                    formatPredictionAmount(flow.lmdProduced),
+                    formatSignedPredictionAmount(flow.lmdNet),
+                ),
+            )
+            PredictionLine(
+                stringResource(R.string.panel_infrast_prediction_exp),
+                formatPredictionAmount(flow.battleRecordExpProduced),
+            )
+            PredictionLine(
+                stringResource(R.string.panel_infrast_prediction_gold),
+                stringResource(
+                    R.string.panel_infrast_prediction_produced_consumed_net,
+                    formatPredictionAmount(flow.pureGoldProduced),
+                    formatPredictionAmount(flow.pureGoldConsumed),
+                    formatSignedPredictionAmount(flow.pureGoldNet),
+                ),
+            )
+            PredictionLine(
+                stringResource(R.string.panel_infrast_prediction_orundum),
+                formatPredictionAmount(flow.orundumProduced),
+            )
+            PredictionLine(
+                stringResource(R.string.panel_infrast_prediction_shard),
+                stringResource(
+                    R.string.panel_infrast_prediction_produced_consumed_net,
+                    formatPredictionAmount(flow.originiumShardProduced),
+                    formatPredictionAmount(flow.originiumShardConsumed),
+                    formatSignedPredictionAmount(flow.originiumShardNet),
+                ),
+            )
+            PredictionLine(
+                stringResource(R.string.panel_infrast_prediction_orundum_cost),
+                stringResource(
+                    R.string.panel_infrast_prediction_orundum_cost_value,
+                    formatPredictionAmount(flow.orirockCubeConsumed),
+                    formatPredictionAmount(flow.lmdConsumed),
+                ),
+            )
+
+            val balanceText = if (flow.isPureGoldBalanced) {
+                stringResource(
+                    R.string.panel_infrast_prediction_gold_balanced,
+                    formatSignedPredictionAmount(flow.pureGoldNet),
+                )
+            } else {
+                stringResource(
+                    R.string.panel_infrast_prediction_gold_shortage,
+                    formatPredictionAmount(-flow.pureGoldNet),
+                )
+            }
+            Text(
+                text = balanceText,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (flow.isPureGoldBalanced) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+
+            HorizontalDivider()
+            Text(
+                text = stringResource(R.string.panel_infrast_prediction_runway_title),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            if (!hasDepotSnapshot) {
+                Text(
+                    text = stringResource(R.string.panel_infrast_prediction_depot_required),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            } else {
+                prediction.runways.forEach { runway ->
+                    val value = if (runway.daysRemaining == null) {
+                        stringResource(
+                            R.string.panel_infrast_prediction_stock_safe,
+                            formatPredictionAmount(runway.stock.toDouble()),
+                            formatSignedPredictionAmount(runway.dailyNet),
+                        )
+                    } else {
+                        stringResource(
+                            R.string.panel_infrast_prediction_stock_runway,
+                            formatPredictionAmount(runway.stock.toDouble()),
+                            formatSignedPredictionAmount(runway.dailyNet),
+                            String.format("%.1f", runway.daysRemaining),
+                            runway.shortageDate.toString(),
+                        )
+                    }
+                    PredictionLine(infrastMaterialLabel(runway.material), value)
+                }
+            }
+
+            predictionWarningText(prediction)?.let { warning ->
+                Text(
+                    text = warning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PredictionEfficiencySlider(
+    label: String,
+    value: Int,
+    onValueChange: (Int) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(label, style = MaterialTheme.typography.bodySmall)
+            Text("$value%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+        }
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { raw ->
+                onValueChange(((raw / 5f).roundToInt() * 5).coerceIn(100, 300))
+            },
+            valueRange = 100f..300f,
+            steps = 39,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun PredictionLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.38f))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(0.62f),
+        )
+    }
+}
+
+@Composable
+private fun infrastMaterialLabel(material: InfrastMaterial): String = when (material) {
+    InfrastMaterial.LMD -> stringResource(R.string.panel_infrast_prediction_lmd)
+    InfrastMaterial.PURE_GOLD -> stringResource(R.string.panel_infrast_prediction_gold)
+    InfrastMaterial.ORIROCK_CUBE -> stringResource(R.string.panel_infrast_prediction_orirock)
+    InfrastMaterial.ORIGINIUM_SHARD -> stringResource(R.string.panel_infrast_prediction_shard)
+}
+
+@Composable
+private fun predictionWarningText(prediction: InfrastProductionPrediction): String? {
+    if (prediction.warnings.isEmpty()) return null
+    val details = mutableListOf<String>()
+    if (InfrastPredictionWarning.NO_PLAN in prediction.warnings ||
+        InfrastPredictionWarning.NO_PRODUCTION_ROOM in prediction.warnings
+    ) details += stringResource(R.string.panel_infrast_prediction_warning_no_rooms)
+    if (InfrastPredictionWarning.MISSING_PRODUCT in prediction.warnings ||
+        InfrastPredictionWarning.SKIPPED_ROOM in prediction.warnings
+    ) details += stringResource(R.string.panel_infrast_prediction_warning_incomplete)
+    if (InfrastPredictionWarning.UNSUPPORTED_PRODUCT in prediction.warnings) {
+        details += stringResource(
+            R.string.panel_infrast_prediction_warning_unsupported,
+            prediction.unsupportedProducts.joinToString(),
+        )
+    }
+    if (InfrastPredictionWarning.DRONES_NOT_INCLUDED in prediction.warnings) {
+        details += stringResource(
+            R.string.panel_infrast_prediction_warning_drones,
+        )
+    }
+    return details.distinct().joinToString("\n")
+}
+
+private fun formatPredictionAmount(value: Double): String {
+    val formatter = NumberFormat.getNumberInstance().apply {
+        maximumFractionDigits = if (abs(value - value.roundToInt()) < 0.01) 0 else 1
+    }
+    return formatter.format(value)
+}
+
+private fun formatSignedPredictionAmount(value: Double): String =
+    if (value > 0.005) "+${formatPredictionAmount(value)}" else formatPredictionAmount(value)
 
 /**
  * 内置预设按钮组
