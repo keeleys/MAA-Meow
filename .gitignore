@@ -4,7 +4,6 @@
 local.properties
 *.jks
 *.b64
-AGENTS.md
 /.vscode/
 
 # Generated files
