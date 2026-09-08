@@ -66,6 +66,49 @@ Examples:
 
 Keep commits small, independently understandable, and safe to cherry-pick. A pull request description must state motivation, scope, verification, compatibility impact, and known risks. Use a Draft PR when the design is not settled.
 
+### Upstream pull request template (required)
+
+Before drafting or submitting a pull request to `Aliothmoon/MAA-Meow`, read and follow:
+
+- `docs/PULL_REQUEST_GUIDELINES.md`
+- `docs/PULL_REQUEST_GUIDELINES_EN.md`
+
+Use the upstream template below. Do not remove a section; write `无` or explain the requirement source when a section does not apply.
+
+```markdown
+# Pull Request
+
+提交前请阅读 [PR 规范](../docs/PULL_REQUEST_GUIDELINES.md) / [PR Guidelines](../docs/PULL_REQUEST_GUIDELINES_EN.md)。
+
+## 关联 Issue
+
+<!-- Closes #123 / Fixes #123 / Related #123；没有 Issue 时请说明需求来源。 -->
+
+## 变更摘要
+
+<!-- 用 2～5 条 bullet 说明改了什么。 -->
+
+## 验证
+
+<!-- 请写清楚设备、系统版本、权限方案、执行命令或操作路径。不要只写“已测试”。 -->
+
+## 截图 / 日志 / 说明
+
+<!-- 涉及 UI、权限、后台服务、任务执行或 Bug 修复时，请提供截图、Logcat、Actions 链接或复现步骤。 -->
+
+## Checklist
+
+- [ ] 我已阅读并遵守 [PR 规范](../docs/PULL_REQUEST_GUIDELINES.md) / [PR Guidelines](../docs/PULL_REQUEST_GUIDELINES_EN.md)
+```
+
+When preparing the description:
+
+- Use `Closes`, `Fixes`, or `Related` with the issue number when one exists; otherwise state where the request came from.
+- Keep the change summary to 2–5 focused bullet points.
+- Record exact verification evidence: command or operation path, result, device, Android version, and Shizuku/Root backend when relevant.
+- For UI, permissions, background services, task execution, and bug fixes, attach screenshots, Logcat, Actions links, or reproducible steps as appropriate.
+- Check the final checklist item only after the guidelines have actually been reviewed. Never claim a test or runtime environment that was not used.
+
 ## Project map
 
 - `app/src/main/java/.../presentation`: Compose UI, navigation, and view models
@@ -110,4 +153,3 @@ When finishing work, report:
 4. device, Android version, and Shizuku/Root backend for runtime-sensitive changes;
 5. anything not verified;
 6. whether the change is intended for upstream or is fork-only.
-
